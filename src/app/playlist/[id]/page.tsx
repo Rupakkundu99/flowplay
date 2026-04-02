@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, use } from "react";
-import ReactPlayer from "react-player";
+import dynamic from "next/dynamic";
+const ReactPlayer = dynamic(() => import("react-player"), { ssr: false });
 import { PlayCircle, SkipForward, Loader2, AlertCircle } from "lucide-react";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
