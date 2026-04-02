@@ -64,7 +64,7 @@ export default function Home() {
     }
   };
 
-  const YOUTUBE_API_KEY = process.env.NEXT_PUBLIC_YOUTUBE_API_KEY || "AIzaSyA8Z4EtQcrWlAV0KLKqinSng8ODafAF-aE";
+  const YOUTUBE_API_KEY = process.env.NEXT_PUBLIC_YOUTUBE_API_KEY;
 
   const handleAddVideo = async (e: React.FormEvent) => {
     e.preventDefault();
