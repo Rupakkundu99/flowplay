@@ -120,7 +120,7 @@ export default function PlaylistPage({ params }: { params: Promise<{ id: string 
         <div className="aspect-video bg-black rounded-3xl overflow-hidden shadow-2xl border border-white/10 ring-1 ring-emerald-500/20 relative group">
           {currentVideo ? (
             <Player
-              url={currentVideo.url}
+              url={`https://www.youtube.com/watch?v=${currentVideo.videoId}`}
               width="100%"
               height="100%"
               playing={hasStarted}
