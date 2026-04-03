@@ -2,10 +2,20 @@
 
 import { useEffect, useState, use } from "react";
 import dynamic from "next/dynamic";
-const ReactPlayer = dynamic(() => import("react-player"), { ssr: false });
 import { PlayCircle, SkipForward, Loader2, AlertCircle } from "lucide-react";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+
+// Fixed: Using standard "react-player" import so Next.js Turbopack doesn't crash.
+// Next.js dynamic() automatically handles the lazy loading for us.
+const ReactPlayer = dynamic(() => import("react-player"), {
+  ssr: false,
+  loading: () => (
+    <div className="absolute inset-0 flex items-center justify-center bg-black">
+      <Loader2 className="w-10 h-10 animate-spin text-emerald-500" />
+    </div>
+  )
+});
 
 interface VideoItem {
   id?: string;
@@ -31,6 +41,13 @@ export default function PlaylistPage({ params }: { params: Promise<{ id: string 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [hasStarted, setHasStarted] = useState(false);
 
+  // CRITICAL: This state prevents the hydration mismatch that causes the black screen
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   useEffect(() => {
     async function fetchPlaylist() {
       try {
@@ -45,7 +62,6 @@ export default function PlaylistPage({ params }: { params: Promise<{ id: string 
       } catch (err: any) {
         console.error("Error fetching playlist:", err);
         if (err.message?.includes('API key')) {
-          // Mock data fallback if firebase hasn't been configured yet
           setPlaylist({
             id: unwrappedParams.id,
             creatorId: "mock",
@@ -110,7 +126,7 @@ export default function PlaylistPage({ params }: { params: Promise<{ id: string 
               Playing {currentIndex + 1} of {playlist?.videos.length}
             </p>
           </div>
-          
+
           {error && (
             <div className="px-3 py-1 bg-yellow-500/20 border border-yellow-500/30 text-yellow-400 rounded-full text-xs font-semibold">
               Demo Mode Active
@@ -119,8 +135,13 @@ export default function PlaylistPage({ params }: { params: Promise<{ id: string 
         </div>
 
         <div className="aspect-video bg-black rounded-3xl overflow-hidden shadow-2xl border border-white/10 ring-1 ring-emerald-500/20 relative group">
-          {currentVideo ? (
+          {!isMounted ? (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Loader2 className="w-10 h-10 animate-spin text-emerald-500" />
+            </div>
+          ) : currentVideo ? (
             <Player
+              // React-player works best when it can naturally transition the URL instead of force-mounting
               url={`https://www.youtube.com/watch?v=${currentVideo.videoId}`}
               width="100%"
               height="100%"
@@ -129,6 +150,14 @@ export default function PlaylistPage({ params }: { params: Promise<{ id: string 
               onPlay={() => setHasStarted(true)}
               onEnded={handleNext}
               className="absolute top-0 left-0"
+              config={{
+                youtube: {
+                  playerVars: {
+                    origin: typeof window !== 'undefined' ? window.location.origin : '',
+                    autoplay: hasStarted ? 1 : 0
+                  }
+                }
+              }}
             />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center flex-col text-white/40">
@@ -142,16 +171,29 @@ export default function PlaylistPage({ params }: { params: Promise<{ id: string 
           <div className="p-6 bg-white/5 border border-white/10 backdrop-blur-md rounded-2xl flex justify-between items-center mt-6">
             <div className="truncate pr-4">
               <h2 className="text-xl font-bold text-white/90 truncate">{currentVideo.title}</h2>
-              <p className="text-sm text-emerald-400 font-mono mt-1">Now Playing automatically</p>
+              <p className="text-sm text-emerald-400 font-mono mt-1">
+                {hasStarted ? "Now Playing automatically" : "Waiting for playback to start..."}
+              </p>
             </div>
-            
-            <button
-              onClick={handleNext}
-              disabled={!hasNext}
-              className="shrink-0 bg-white/10 hover:bg-emerald-500 hover:text-black disabled:opacity-30 disabled:hover:bg-white/10 disabled:hover:text-white px-5 py-3 rounded-xl font-bold transition-all flex items-center gap-2"
-            >
-              Skip <SkipForward className="w-5 h-5" />
-            </button>
+
+            <div className="flex gap-2 shrink-0">
+              <a
+                href={`https://www.youtube.com/watch_videos?video_ids=${playlist?.videos.map(v => v.videoId).join(',')}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="bg-red-600/20 hover:bg-red-600 text-red-500 hover:text-white px-5 py-3 rounded-xl font-bold transition-all flex items-center gap-2"
+                title="Watch full playlist on YouTube"
+              >
+                Watch on YouTube
+              </a>
+              <button
+                onClick={handleNext}
+                disabled={!hasNext}
+                className="bg-white/10 hover:bg-emerald-500 hover:text-black disabled:opacity-30 disabled:hover:bg-white/10 disabled:hover:text-white px-5 py-3 rounded-xl font-bold transition-all flex items-center gap-2"
+              >
+                Skip <SkipForward className="w-5 h-5" />
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -165,12 +207,12 @@ export default function PlaylistPage({ params }: { params: Promise<{ id: string 
               {playlist?.videos.length} tracks
             </span>
           </h3>
-          
+
           <div className="overflow-y-auto pr-2 space-y-3 custom-scrollbar flex-1 pb-4">
             {playlist?.videos.map((vid, idx) => {
               const isActive = idx === currentIndex;
               const isPast = idx < currentIndex;
-              
+
               return (
                 <button
                   key={idx}
@@ -178,16 +220,15 @@ export default function PlaylistPage({ params }: { params: Promise<{ id: string 
                     setCurrentIndex(idx);
                     setHasStarted(true);
                   }}
-                  className={`w-full text-left group flex items-center gap-4 p-3 rounded-xl transition-all border ${
-                    isActive 
-                      ? "bg-emerald-500/10 border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.1)]" 
+                  className={`w-full text-left group flex items-center gap-4 p-3 rounded-xl transition-all border ${isActive
+                      ? "bg-emerald-500/10 border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.1)]"
                       : "bg-black/30 border-transparent hover:bg-white/5"
-                  } ${isPast ? "opacity-40 hover:opacity-100" : ""}`}
+                    } ${isPast ? "opacity-40 hover:opacity-100" : ""}`}
                 >
                   <div className={`relative w-20 h-12 bg-black rounded shrink-0 overflow-hidden border ${isActive ? 'border-emerald-500/50' : 'border-white/10'}`}>
-                    <img 
-                      src={`https://img.youtube.com/vi/${vid.videoId}/mqdefault.jpg`} 
-                      alt="thumbnail" 
+                    <img
+                      src={`https://img.youtube.com/vi/${vid.videoId}/mqdefault.jpg`}
+                      alt="thumbnail"
                       className={`w-full h-full object-cover transition-opacity ${isActive ? 'opacity-100' : 'opacity-60 group-hover:opacity-90'}`}
                     />
                     {isActive && (
@@ -196,7 +237,7 @@ export default function PlaylistPage({ params }: { params: Promise<{ id: string 
                       </div>
                     )}
                   </div>
-                  
+
                   <div className="truncate flex-1">
                     <p className={`font-semibold text-sm truncate ${isActive ? "text-emerald-400" : "text-white/80"}`}>
                       {vid.title}
